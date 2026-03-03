@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        LISTENER_ARN = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:loadbalancer/app/blue-green-ALB/23e941fe53f8f456"
+        LISTENER_ARN = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:listener/app/blue-green-ALB/23e941fe53f8f456/174853d4a687cf0f"
         BLUE_TG = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:targetgroup/blue-tg/16a09727407136ae"
         GREEN_TG = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:targetgroup/green-tg/1fe7388114450e41"
         BLUE_IP = "3.109.54.228"
@@ -10,12 +10,6 @@ pipeline {
     }
 
     stages {
-
-        stage('Checkout') {
-            steps {
-                git 'https://github.com/Riyajkalawant/Production-Ready-Blue-Green-Deployment-using-Jenkins-and-Application-Load-Balancer.git'
-            }
-        }
 
         stage('Check Active Target Group') {
             steps {
@@ -40,7 +34,7 @@ pipeline {
                     }
 
                     sh """
-                    scp -o StrictHostKeyChecking=no index.html ec2-user@$TARGET_IP:/var/www/html/index.html
+                    scp -i /home/ec2-user/bluegreen.pem -o StrictHostKeyChecking=no index.html ec2-user@$TARGET_IP:/var/www/html/index.html
                     """
                 }
             }
