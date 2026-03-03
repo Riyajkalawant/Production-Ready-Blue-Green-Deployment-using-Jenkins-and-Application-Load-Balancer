@@ -11,6 +11,12 @@ pipeline {
 
     stages {
 
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Riyajkalawant/Production-Ready-Blue-Green-Deployment-using-Jenkins-and-Application-Load-Balancer.git'
+            }
+        }
+
         stage('Check Active Target Group') {
             steps {
                 script {
@@ -18,6 +24,7 @@ pipeline {
                         script: "aws elbv2 describe-listeners --listener-arns $LISTENER_ARN --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text",
                         returnStdout: true
                     ).trim()
+                    echo "Active Target Group: ${ACTIVE_TG}"
                 }
             }
         }
@@ -32,9 +39,12 @@ pipeline {
                         TARGET_IP = BLUE_IP
                         NEW_TG = BLUE_TG
                     }
+                    echo "Deploying to inactive server: ${TARGET_IP}"
+                }
 
+                sshagent(['bluegreen-key']) {
                     sh """
-                    scp -i /home/ec2-user/bluegreen.pem -o StrictHostKeyChecking=no index.html ec2-user@$TARGET_IP:/var/www/html/index.html
+                    scp -o StrictHostKeyChecking=no index.html ec2-user@$TARGET_IP:/var/www/html/index.html
                     """
                 }
             }
@@ -48,6 +58,7 @@ pipeline {
                         script: "curl -s http://$TARGET_IP",
                         returnStdout: true
                     )
+                    echo "Health Check Response: ${RESPONSE}"
 
                     if (!RESPONSE.contains("Version")) {
                         error("Health Check Failed")
@@ -63,6 +74,7 @@ pipeline {
                 --listener-arn $LISTENER_ARN \
                 --default-actions Type=forward,TargetGroupArn=$NEW_TG
                 """
+                echo "Traffic switched to ${NEW_TG}"
             }
         }
     }
@@ -70,6 +82,13 @@ pipeline {
     post {
         failure {
             echo "Deployment Failed - Rolling Back"
+            // Optional rollback: switch traffic back to previous environment
+            sh """
+            aws elbv2 modify-listener \
+            --listener-arn $LISTENER_ARN \
+            --default-actions Type=forward,TargetGroupArn=$ACTIVE_TG
+            """
+            echo "Traffic rolled back to previous environment: ${ACTIVE_TG}"
         }
     }
 }
