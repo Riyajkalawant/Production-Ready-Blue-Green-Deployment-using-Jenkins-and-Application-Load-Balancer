@@ -23,8 +23,17 @@ pipeline {
             steps {
                 script {
                     sh """
+                    echo "Copying index.html to Green server..."
+
+                    scp -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no index.html \
+                    ec2-user@${GREEN_EC2_IP}:/home/ec2-user/
+
+                    echo "Moving file to NGINX web directory..."
+
                     ssh -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ec2-user@${GREEN_EC2_IP} \
-                    'sudo cp index.html /var/www/html/'
+                    'sudo mv /home/ec2-user/index.html /usr/share/nginx/html/'
+
+                    echo "Deployment to Green completed."
                     """
                 }
             }
@@ -33,14 +42,18 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
+                    echo "Performing ALB Health Check..."
+
                     def healthCheck = sh(
-                        script: "curl -f http://${ALB_DNS}/index.html",
+                        script: "curl -f http://${ALB_DNS}",
                         returnStatus: true
                     )
 
                     if (healthCheck != 0) {
                         error "Health Check Failed!"
                     }
+
+                    echo "Health Check Passed!"
                 }
             }
         }
@@ -48,11 +61,15 @@ pipeline {
         stage('Switch Traffic to Green') {
             steps {
                 script {
+                    echo "Switching traffic to Green Target Group..."
+
                     sh """
                     aws elbv2 modify-listener \
                     --listener-arn ${ALB_LISTENER_ARN} \
                     --default-actions Type=forward,TargetGroupArn=${INACTIVE_TG}
                     """
+
+                    echo "Traffic switched to Green successfully!"
                 }
             }
         }
@@ -60,13 +77,17 @@ pipeline {
 
     post {
         failure {
-            echo "Deployment Failed! Rolling back..."
+            echo "Deployment Failed! Rolling back to Blue..."
 
             sh """
             aws elbv2 modify-listener \
             --listener-arn ${ALB_LISTENER_ARN} \
             --default-actions Type=forward,TargetGroupArn=${ACTIVE_TG}
             """
+        }
+
+        success {
+            echo "Blue-Green Deployment Successful 🚀"
         }
     }
 }
