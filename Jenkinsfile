@@ -2,53 +2,25 @@ pipeline {
     agent any
 
     environment {
-        LISTENER_ARN = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:listener/app/blue-green-ALB/23e941fe53f8f456/174853d4a687cf0f"
-        BLUE_TG      = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:targetgroup/blue-tg/16a09727407136ae"
-        GREEN_TG     = "arn:aws:elasticloadbalancing:ap-south-1:996091555734:targetgroup/green-tg/1fe7388114450e41"
-        BLUE_IP      = "3.109.54.228"
-        GREEN_IP     = "13.203.232.193"
+        ACTIVE_TG = 'arn:aws:elasticloadbalancing:ap-south-1:996091555734:targetgroup/Blue-TG/b91caa4deb45b883'
+        INACTIVE_TG = 'arn:aws:elasticloadbalancing:ap-south-1:996091555734:targetgroup/Green-TG/f30e2eec6f0a642b'
+        ALB_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:996091555734:listener/app/blue-green-ALB/b1cab7841348dd14/10e585a31de76566'
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'git@github.com:Riyajkalawant/Production-Ready-Blue-Green-Deployment-using-Jenkins-and-Application-Load-Balancer.git',
-                    credentialsId: 'bluegreen-key'
-            }
-        }
-
-        stage('Check Active Target Group') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
-                    script {
-                        ACTIVE_TG = sh(
-                            script: "aws elbv2 describe-listeners --listener-arns $LISTENER_ARN --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text",
-                            returnStdout: true
-                        ).trim()
-                        echo "Current Active Target Group: ${ACTIVE_TG}"
-                    }
-                }
+                checkout scm
+                echo "Code pulled from GitHub"
             }
         }
 
         stage('Deploy to Inactive Environment') {
             steps {
                 script {
-                    if (ACTIVE_TG == BLUE_TG) {
-                        TARGET_IP = GREEN_IP
-                        NEW_TG = GREEN_TG
-                    } else {
-                        TARGET_IP = BLUE_IP
-                        NEW_TG = BLUE_TG
-                    }
-                }
-
-                sshagent(['bluegreen-key']) {
-                    sh """
-                        scp -o StrictHostKeyChecking=no index.html ec2-user@$TARGET_IP:/var/www/html/index.html
-                    """
+                    echo "Deploying to ${INACTIVE_TG}..."
+                    // SSH करून files copy करा
+                    sh "ssh -i key.pem ec2-user@<Green-IP> 'sudo cp index.html /usr/share/nginx/html/'"
                 }
             }
         }
@@ -56,16 +28,10 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    sleep 15
-                    RESPONSE = sh(
-                        script: "curl -s http://$TARGET_IP",
-                        returnStdout: true
-                    ).trim()
-
-                    if (!RESPONSE.contains("Version")) {
-                        error("Health Check Failed")
-                    } else {
-                        echo "Health Check Passed"
+                    echo "Performing Health Check..."
+                    def healthCheck = sh(script: "curl -f http://<ALB-DNS>/index.html > /dev/null 2>&1", returnStatus: true)
+                    if (healthCheck != 0) {
+                        error "Health Check Failed! Rolling back..."
                     }
                 }
             }
@@ -73,12 +39,9 @@ pipeline {
 
         stage('Switch Traffic') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
-                    sh """
-                        aws elbv2 modify-listener \
-                            --listener-arn $LISTENER_ARN \
-                            --default-actions Type=forward,TargetGroupArn=$NEW_TG
-                    """
+                script {
+                    echo "Switching Traffic to ${INACTIVE_TG}..."
+                    sh "aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions 'Protocol=HTTP,Port=80,TargetGroupArn=arn:aws:elasticloadbalancing:region:account-id:targetgroup/${INACTIVE_TG}/...' "
                 }
             }
         }
@@ -86,10 +49,8 @@ pipeline {
 
     post {
         failure {
-            echo "Deployment Failed - Check logs for details"
-        }
-        success {
-            echo "Deployment Completed Successfully!"
+            echo "Deployment Failed! Rolling back..."
+            sh "aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions 'Protocol=HTTP,Port=80,TargetGroupArn=arn:aws:elasticloadbalancing:region:account-id:targetgroup/${ACTIVE_TG}/...' "
         }
     }
 }
