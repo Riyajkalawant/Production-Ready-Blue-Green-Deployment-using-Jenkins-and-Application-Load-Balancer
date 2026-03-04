@@ -7,7 +7,7 @@ pipeline {
         ALB_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:996091555734:listener/app/blue-green-ALB/b1cab7841348dd14/10e585a31de76566'
         ALB_DNS = 'blue-green-ALB-372743362.ap-south-1.elb.amazonaws.com'
         GREEN_EC2_IP = '43.204.232.41'
-        SSH_KEY_PATH = '/home/ubuntu/bluegreen.pem'
+        SSH_KEY_PATH = '/var/lib/jenkins/bluegreen.pem'
     }
 
     stages {
