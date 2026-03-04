@@ -30,8 +30,10 @@ pipeline {
 
                     echo "Moving file to NGINX web directory..."
 
-                    ssh -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ec2-user@${GREEN_EC2_IP} \
-                    'sudo mv /home/ec2-user/index.html /usr/share/nginx/html/'
+                    ssh -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ec2-user@${GREEN_EC2_IP} '
+                        sudo mv /home/ec2-user/index.html /usr/share/nginx/html/index.html
+                        sudo systemctl restart nginx
+                    '
 
                     echo "Deployment to Green completed."
                     """
@@ -39,21 +41,35 @@ pipeline {
             }
         }
 
-        stage('Health Check') {
+        stage('Wait for Green Registration') {
+            steps {
+                echo "Waiting 60 seconds for target group registration..."
+                sleep 60
+            }
+        }
+
+        stage('Verify Green Target Group Health') {
             steps {
                 script {
-                    echo "Performing ALB Health Check..."
+                    echo "Checking Green Target Group Health..."
 
-                    def healthCheck = sh(
-                        script: "curl -f http://${ALB_DNS}",
-                        returnStatus: true
-                    )
+                    def status = sh(
+                        script: """
+                        aws elbv2 describe-target-health \
+                        --target-group-arn ${INACTIVE_TG} \
+                        --query 'TargetHealthDescriptions[*].TargetHealth.State' \
+                        --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
 
-                    if (healthCheck != 0) {
-                        error "Health Check Failed!"
+                    echo "Green TG Health Status: ${status}"
+
+                    if (!status.contains("healthy")) {
+                        error("Green Target Group is NOT healthy!")
                     }
 
-                    echo "Health Check Passed!"
+                    echo "Green is Healthy!"
                 }
             }
         }
@@ -76,6 +92,7 @@ pipeline {
     }
 
     post {
+
         failure {
             echo "Deployment Failed! Rolling back to Blue..."
 
@@ -84,10 +101,12 @@ pipeline {
             --listener-arn ${ALB_LISTENER_ARN} \
             --default-actions Type=forward,TargetGroupArn=${ACTIVE_TG}
             """
+
+            echo "Rollback to Blue completed!"
         }
 
         success {
-            echo "Blue-Green Deployment Successful 🚀"
+            echo "Blue-Green Deployment Successful "
         }
     }
 }
