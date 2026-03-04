@@ -7,7 +7,7 @@ pipeline {
         ALB_LISTENER_ARN = 'arn:aws:elasticloadbalancing:ap-south-1:996091555734:listener/app/blue-green-ALB/b1cab7841348dd14/10e585a31de76566'
         GREEN_EC2_IP = '43.204.232.41'  // तुमची Green EC2 Public IP टाका
         BLUE_EC2_IP = '13.233.80.41'   // तुमची Blue EC2 Public IP टाका
-        SSH_KEY_PATH = '/home/ubuntu/.ssh/jenkinsubuntu.pem'  // तुमची SSH Key Path टाका
+        SSH_KEY_PATH = '/var/lib/jenkins/jenkinsubuntu.pem'  // तुमची SSH Key Path टाका
     }
 
     stages {
