@@ -89,13 +89,15 @@ Listener → Forward to Green Target Group
 
 ---
 
+
+
+#  Automatic Rollback Demonstration
+
 Green-TG → Unhealthy  
 
 ![Target Groups Healthy](img/green-unhealthy.png)
 
 ---
-
-#  Automatic Rollback Demonstration
 
 If Green fails health check:
 
